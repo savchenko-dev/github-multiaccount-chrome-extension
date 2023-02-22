@@ -1,32 +1,23 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
+<html lang="en" data-color-mode="auto" data-dark-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
     <title>My Chrome Extension</title>
     <link rel="stylesheet" href="popup.css" />
-</head>
-<body>
-  <div class="app">
-    <p class="counter-label">Counter</p>
-    <div id="counter" class="counter"></div>
-    <div class="button-container">
-      <button id="decrementBtn" class="button">-</button>
-      <button id="incrementBtn" class="button">+</button>
+  </head>
+  <body>
+    <div class="app">
+      <div id="accounts-list" class="border rounded-1">
+        <p class="text-center">No accounts</p>
+      </div>
+      <button id="save-current-account" class="btn btn-block">
+        Save current account
+      </button>
+      <button id="safe-logout" class="btn btn-block" style="margin-top: 10px">
+        Safe logout
+      </button>
     </div>
 
-    <hr class="divider" />
-
-    <p class="title">Chrome Extension is Ready!</p>
-    <p class="subtitle">Start by updating <code>popup.html</code></p>
-  </div>
-
-  <script src="popup.js"></script>
-
-  <!--
-    This HTML file opens when you click on icon from the toolbar.
-
-    To begin the development, run `npm run watch`.
-    To create a production bundle, use `npm run build`.
-  -->
-</body>
+    <script src="popup.js"></script>
+  </body>
 </html>

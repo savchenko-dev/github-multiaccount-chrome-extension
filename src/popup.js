@@ -1,112 +1,145 @@
-'use strict';
+"use strict";
 
-import './popup.css';
+import "./popup.css";
 
-(function() {
-  // We will make use of Storage API to get and store `count` value
-  // More information on Storage API can we found at
-  // https://developer.chrome.com/extensions/storage
+(function () {
+  document.addEventListener("DOMContentLoaded", async () => {
+    renderAccounts();
 
-  // To get storage access, we have to mention it in `permissions` property of manifest.json file
-  // More information on Permissions can we found at
-  // https://developer.chrome.com/extensions/declare_permissions
-  const counterStorage = {
-    get: cb => {
-      chrome.storage.sync.get(['count'], result => {
-        cb(result.count);
-      });
-    },
-    set: (value, cb) => {
-      chrome.storage.sync.set(
-        {
-          count: value,
-        },
-        () => {
-          cb();
+    document
+      .getElementById("save-current-account")
+      .addEventListener("click", async () => {
+        const sessionCookie = await getSessionCookie();
+        const accounts = await getAccounts();
+
+        if (
+          accounts.find(
+            (account) => account.user_session === sessionCookie?.value
+          )
+        ) {
+          return;
         }
-      );
-    },
-  };
 
-  function setupCounter(initialValue = 0) {
-    document.getElementById('counter').innerHTML = initialValue;
+        const user = await getUser();
+        const account = { ...user, user_session: sessionCookie.value };
 
-    document.getElementById('incrementBtn').addEventListener('click', () => {
-      updateCounter({
-        type: 'INCREMENT',
+        await setAccounts([...accounts, account]);
+
+        renderAccounts();
       });
-    });
 
-    document.getElementById('decrementBtn').addEventListener('click', () => {
-      updateCounter({
-        type: 'DECREMENT',
+    document
+      .getElementById("safe-logout")
+      .addEventListener("click", async () => {
+        await setSessionCookie("");
+        await chrome.tabs.reload();
+        renderAccounts();
       });
-    });
-  }
+  });
 
-  function updateCounter({ type }) {
-    counterStorage.get(count => {
-      let newCount;
+  async function getUser() {
+    const tab = await getCurrentTab();
 
-      if (type === 'INCREMENT') {
-        newCount = count + 1;
-      } else if (type === 'DECREMENT') {
-        newCount = count - 1;
-      } else {
-        newCount = count;
-      }
-
-      counterStorage.set(newCount, () => {
-        document.getElementById('counter').innerHTML = newCount;
-
-        // Communicate with content script of
-        // active tab by sending a message
-        chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-          const tab = tabs[0];
-
-          chrome.tabs.sendMessage(
-            tab.id,
-            {
-              type: 'COUNT',
-              payload: {
-                count: newCount,
-              },
-            },
-            response => {
-              console.log('Current count value passed to contentScript file');
-            }
-          );
+    return await new Promise((resolve, reject) => {
+      try {
+        chrome.tabs.sendMessage(tab.id, { type: "GET_USER" }, (user) => {
+          resolve(user);
         });
-      });
-    });
-  }
-
-  function restoreCounter() {
-    // Restore count value
-    counterStorage.get(count => {
-      if (typeof count === 'undefined') {
-        // Set counter value as 0
-        counterStorage.set(0, () => {
-          setupCounter(0);
-        });
-      } else {
-        setupCounter(count);
+      } catch (err) {
+        reject(err);
       }
     });
   }
 
-  document.addEventListener('DOMContentLoaded', restoreCounter);
+  async function renderAccounts() {
+    const accounts = await getAccounts();
+    const sessionCookie = await getSessionCookie();
 
-  // Communicate with background file by sending a message
-  chrome.runtime.sendMessage(
-    {
-      type: 'GREETINGS',
-      payload: {
-        message: 'Hello, my name is Pop. I am from Popup.',
-      },
-    },
-    response => {
-      console.log(response.message);
+    const accountsListEl = document.getElementById("accounts-list");
+
+    accounts.length > 0 && (accountsListEl.innerHTML = "");
+
+    for (let i = 0; i < accounts.length; i++) {
+      const account = accounts[i];
+      const isCurrent = sessionCookie?.value === account.user_session;
+
+      const accountEl = document.createElement("button");
+      accountEl.className = "btn btkn-bloc";
+      accountEl.dataset.id = account.user_session;
+      isCurrent && accountEl.classList.add("btn-primary");
+      const accountImage = document.createElement("img");
+      accountImage.className = "avatar avatar-user";
+      accountImage.src = account.avatar;
+      accountImage.width = 20;
+      accountImage.height = 20;
+      accountImage.style.marginRight = "5px";
+      const accountUsername = document.createTextNode(account.username);
+      accountEl.appendChild(accountImage);
+      accountEl.appendChild(accountUsername);
+
+      if (!isCurrent) {
+        accountEl.addEventListener("click", async () => {
+          await setSessionCookie(account.user_session);
+          await chrome.tabs.reload();
+          renderAccounts();
+        });
+      }
+
+      accountEl.addEventListener("dblclick", async () => {
+        const accounts = await getAccounts();
+        await setAccounts(
+          accounts.filter(
+            (_account) => _account.user_session !== account.user_session
+          )
+        );
+        await setSessionCookie("");
+        await chrome.tabs.reload();
+        renderAccounts();
+      });
+
+      accountsListEl.appendChild(accountEl);
     }
-  );
+  }
+
+  async function getAccounts() {
+    const response = await chrome.storage.sync.get(["accounts"]);
+    return response?.accounts || [];
+  }
+
+  async function setAccounts(accounts) {
+    return await chrome.storage.sync.set({ accounts }).then(() => {
+      console.log("Accounts saved", accounts);
+    });
+  }
+
+  async function getSessionCookie() {
+    const tab = await getCurrentTab();
+
+    return await chrome.cookies.get({
+      url: tab.url,
+      name: "user_session",
+    });
+  }
+
+  async function setSessionCookie(user_session) {
+    const tab = await getCurrentTab();
+
+    if (!tab) throw new Error("Tab object is undefined");
+
+    return await chrome.cookies.set({
+      url: tab.url,
+      value: user_session,
+      httpOnly: true,
+      name: "user_session",
+      sameSite: "lax",
+      secure: true,
+    });
+  }
+
+  async function getCurrentTab() {
+    let queryOptions = { active: true, lastFocusedWindow: true };
+    // `tab` will either be a `tabs.Tab` instance or `undefined`.
+    let [tab] = await chrome.tabs.query(queryOptions);
+    return tab;
+  }
 })();
